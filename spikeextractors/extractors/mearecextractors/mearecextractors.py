@@ -17,20 +17,22 @@ class MEArecRecordingExtractor(RecordingExtractor):
     extractor_name = 'MEArecRecordingExtractor'
     has_default_locations = True
     installed = HAVE_MREX  # check at class level if installed or not
-    _gui_params = [
-        {'name': 'recording_path', 'type': 'path', 'title': "Path to file"},
+    is_writable = True
+    mode = 'file'
+    extractor_gui_params = [
+        {'name': 'file_path', 'type': 'file', 'title': "Path to file (.h5 or .hdf5)"},
     ]
     installation_mesg = "To use the MEArec extractors, install MEArec: \n\n pip install MEArec\n\n"  # error message when not installed
 
-    def __init__(self, recording_path, locs_2d=True):
-        RecordingExtractor.__init__(self)
-        self._recording_path = recording_path
+    def __init__(self, file_path, locs_2d=True):
+        self._recording_path = file_path
         self._fs = None
         self._positions = None
         self._recordings = None
         self._locs_2d = locs_2d
         self._locations = None
         self._initialize()
+        RecordingExtractor.__init__(self)
 
         if self._locations is not None:
             for chan, pos in enumerate(self._locations):
@@ -101,7 +103,7 @@ class MEArecRecordingExtractor(RecordingExtractor):
         if (save_path.suffix == '.h5' or save_path.suffix == '.hdf5') or (not check_suffix):
             info = {'recordings': {'fs': recording.get_sampling_frequency()}}
             rec_dict = {'recordings': recording.get_traces()}
-            if 'location' in recording.get_channel_property_names():
+            if 'location' in recording.get_shared_channel_property_names():
                 positions = np.array([recording.get_channel_property(chan, 'location')
                                       for chan in recording.get_channel_ids()])
                 rec_dict['channel_positions'] = positions
@@ -114,15 +116,18 @@ class MEArecRecordingExtractor(RecordingExtractor):
 class MEArecSortingExtractor(SortingExtractor):
 
     extractor_name = 'MEArecSortingExtractor'
-    installed = HAVE_MREX  # check at class level if installed or not
-    _gui_params = [
-        {'name': 'recording_path', 'type': 'str', 'title': "str, Path to file"},
+    exporter_name = 'MEArecSortingExporter'
+    exporter_gui_params = [
+        {'name': 'save_path', 'type': 'file', 'title': "Save path (.h5 or .hdf5)"},
     ]
+    installed = HAVE_MREX  # check at class level if installed or not
+    is_writable = True
+    mode = 'file'
     installation_mesg = "To use the MEArec extractors, install MEArec: \n\n pip install MEArec\n\n"  # error message when not installed
 
-    def __init__(self, recording_path):
+    def __init__(self, file_path):
         SortingExtractor.__init__(self)
-        self._recording_path = recording_path
+        self._recording_path = file_path
         self._num_units = None
         self._spike_trains = None
         self._unit_ids = None

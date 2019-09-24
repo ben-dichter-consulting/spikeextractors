@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import numpy as np
 import copy
+from .extraction_tools import load_probe_file, save_to_probe_file, write_to_binary_dat_format, get_sub_extractors_by_property
 
 class RecordingExtractor(ABC):
     '''A class that contains functions for extracting important information
@@ -8,14 +9,8 @@ class RecordingExtractor(ABC):
     functions with the @abstractmethod tag must be implemented for the
     initialization to work.
 
-
+ 
     '''
-
-    extractor_name = ''
-    has_default_locations = False
-    installed = False  # check at class level if installed or not
-    _gui_params = []
-    installation_mesg = ""  # error message when not installed
 
     def __init__(self):
         self._epochs = {}
@@ -27,7 +22,7 @@ class RecordingExtractor(ABC):
         given channels ids and the given start and end frame. It will return
         traces from within three ranges:
 
-            [start_frame, t_start+1, ..., end_frame-1]
+            [start_frame, start_frame+1, ..., end_frame-1]
             [start_frame, start_frame+1, ..., final_recording_frame - 1]
             [0, 1, ..., end_frame-1]
             [0, 1, ..., final_recording_frame - 1]
@@ -199,8 +194,8 @@ class RecordingExtractor(ABC):
                     snippet_buffer[1] -= snippet_range[1] - num_frames
                     snippet_range[1] -= snippet_range[1] - num_frames
                 snippet_chunk[:, snippet_buffer[0]:snippet_buffer[1]] = self.get_traces(channel_ids=channel_ids,
-                                                                                       start_frame=snippet_range[0],
-                                                                                       end_frame=snippet_range[1])
+                                                                                        start_frame=snippet_range[0],
+                                                                                        end_frame=snippet_range[1])
             snippets[i] = snippet_chunk
         return snippets
 
@@ -221,7 +216,7 @@ class RecordingExtractor(ABC):
                     location = np.asarray(locations[i])
                     self.set_channel_property(channel_ids[i], 'location', location.astype(float))
                 else:
-                    raise ValueError(str(locations[i]) + " must be an array_like")
+                    raise TypeError(str(locations[i]) + " must be an array_like")
         else:
             raise ValueError("channel_ids and locations must have same length")
 
@@ -238,7 +233,7 @@ class RecordingExtractor(ABC):
         ----------
         locations: array_like
             Returns a list of corresonding locations (floats) for the given
-            channel_ids
+            channel_ids.
         '''
         if channel_ids is None:
             channel_ids = self.get_channel_ids()
@@ -264,7 +259,7 @@ class RecordingExtractor(ABC):
                 if isinstance(groups[i], (int, np.integer)):
                     self.set_channel_property(channel_ids[i], 'group', groups[i])
                 else:
-                    raise ValueError(str(groups[i]) + " must be an int")
+                    raise TypeError(str(groups[i]) + " must be an int")
         else:
             raise ValueError("channel_ids and groups must have same length")
 
@@ -281,7 +276,7 @@ class RecordingExtractor(ABC):
         ----------
         groups: array_like
             Returns a list of corresonding groups (ints) for the given
-            channel_ids
+            channel_ids.
         '''
         if channel_ids is None:
             channel_ids = self.get_channel_ids()
@@ -290,6 +285,57 @@ class RecordingExtractor(ABC):
             group = self.get_channel_property(channel_id, 'group')
             groups.append(group)
         return groups
+
+    def set_channel_gains(self, channel_ids, gains):
+        '''This function sets the gain property of each specified channel
+        id with the corresponding group of the passed in gains float/list.
+
+        Parameters
+        ----------
+        channel_ids: array_like
+            The channel ids (ints) for which the groups will be specified
+        gains: float/array_like
+            If a float, each channel will be assigned the corresponding gain.
+            If a list, each channel will be given a gain from the list.
+        '''
+        if isinstance(gains, (int, np.integer, float, np.float64)):
+            gain = float(gains)
+            for i in range(len(channel_ids)):
+                self.set_channel_property(channel_ids[i], 'gain', gain)
+        elif isinstance(gains, (list, np.ndarray)):
+            if len(channel_ids) == len(gains):
+                for i in range(len(channel_ids)):
+                    if isinstance(gains[i], (int, np.integer, float, np.float64)):
+                        self.set_channel_property(channel_ids[i], 'gain', float(gains[i]))
+                    else:
+                        raise TypeError("all gains must be floats or ints")
+            else:
+                raise ValueError("channel_ids and gains must have same length")
+        else:
+            raise TypeError("gains must be a int/float or a list of int/floats")
+
+    def get_channel_gains(self, channel_ids=None):
+        '''This function returns the gain of each channel specifed by
+        channel_ids.
+
+        Parameters
+        ----------
+        channel_ids: array_like
+            The channel ids (ints) for which the gains will be returned
+
+        Returns
+        ----------
+        gains: array_like
+            Returns a list of corresonding gains (floats) for the given
+            channel_ids.
+        '''
+        if channel_ids is None:
+            channel_ids = self.get_channel_ids()
+        gains = []
+        for channel_id in channel_ids:
+            gain = self.get_channel_property(channel_id, 'gain')
+            gains.append(gain)
+        return gains
 
     def set_channel_property(self, channel_id, property_name, value):
         '''This function adds a property dataset to the given channel under the
@@ -312,11 +358,11 @@ class RecordingExtractor(ABC):
                 if isinstance(property_name, str):
                     self._channel_properties[channel_id][property_name] = value
                 else:
-                    raise ValueError(str(property_name) + " must be a string")
+                    raise TypeError(str(property_name) + " must be a string")
             else:
                 raise ValueError(str(channel_id) + " is not a valid channel_id")
         else:
-            raise ValueError(str(channel_id) + " must be an int")
+            raise TypeError(str(channel_id) + " must be an int")
 
     def get_channel_property(self, channel_id, property_name):
         '''This function returns the data stored under the property name from
@@ -343,16 +389,16 @@ class RecordingExtractor(ABC):
                     if property_name in list(self._channel_properties[channel_id].keys()):
                         return self._channel_properties[channel_id][property_name]
                     else:
-                        raise ValueError(str(property_name) + " has not been added to channel " + str(channel_id))
+                        raise RuntimeError(str(property_name) + " has not been added to channel " + str(channel_id))
                 else:
-                    raise ValueError(str(property_name) + " must be a string")
+                    raise TypeError(str(property_name) + " must be a string")
             else:
                 raise ValueError(str(channel_id) + " is not a valid channel_id")
         else:
-            raise ValueError(str(channel_id) + " must be an int")
+            raise TypeError(str(channel_id) + " must be an int")
 
-    def get_channel_property_names(self, channel_id=None):
-        '''Get a list of property names for a given channel, or for all channels if channel_id is None
+    def get_channel_property_names(self, channel_id):
+        '''Get a list of property names for a given channel.
          Parameters
         ----------
         channel_id: int
@@ -363,14 +409,6 @@ class RecordingExtractor(ABC):
         property_names
             The list of property names
         '''
-        if channel_id is None:
-            property_names = []
-            for channel_id in self.get_channel_ids():
-                curr_property_names = self.get_channel_property_names(channel_id=channel_id)
-                for curr_property_name in curr_property_names:
-                    property_names.append(curr_property_name)
-            property_names = sorted(list(set(property_names)))
-            return property_names
         if isinstance(channel_id, (int, np.integer)):
             if channel_id in self.get_channel_ids():
                 if channel_id not in self._channel_properties:
@@ -380,7 +418,29 @@ class RecordingExtractor(ABC):
             else:
                 raise ValueError(str(channel_id) + " is not a valid channel_id")
         else:
-            raise ValueError(str(channel_id) + " must be an int")
+            raise TypeError(str(channel_id) + " must be an int")
+
+    def get_shared_channel_property_names(self, channel_ids=None):
+        '''Get the intersection of channel property names for a given set of channels or for all channels if channel_ids is None.
+         Parameters
+        ----------
+        channel_ids: array_like
+            The channel ids for which the shared property names will be returned.
+            If None (default), will return shared property names for all channels
+        Returns
+        ----------
+        property_names
+            The list of shared property names
+        '''
+        if channel_ids is None:
+            channel_ids = self.get_channel_ids()
+        property_names = []
+        curr_property_name_set = set(self.get_channel_property_names(channel_id=channel_ids[0]))
+        for channel_id in channel_ids[1:]:
+            curr_channel_property_name_set = set(self.get_channel_property_names(channel_id=channel_id))
+            curr_property_name_set = curr_property_name_set.intersection(curr_channel_property_name_set)
+        property_names = sorted(list(curr_property_name_set))
+        return property_names
 
     def copy_channel_properties(self, recording, channel_ids=None):
         '''Copy channel properties from another recording extractor to the current
@@ -429,7 +489,7 @@ class RecordingExtractor(ABC):
             else:
                 self._epochs[epoch_name] = {'start_frame': int(start_frame), 'end_frame': int(end_frame)}
         else:
-            raise ValueError("epoch_name must be a string")
+            raise TypeError("epoch_name must be a string")
 
     def remove_epoch(self, epoch_name):
         '''This function removes an epoch from your recording extractor.
@@ -443,9 +503,9 @@ class RecordingExtractor(ABC):
             if epoch_name in list(self._epochs.keys()):
                 del self._epochs[epoch_name]
             else:
-                raise ValueError("This epoch has not been added")
+                raise RuntimeError("This epoch has not been added")
         else:
-            raise ValueError("epoch_name must be a string")
+            raise TypeError("epoch_name must be a string")
 
     def get_epoch_names(self):
         '''This function returns a list of all the epoch names in your recording
@@ -487,9 +547,9 @@ class RecordingExtractor(ABC):
                 epoch_info = self._epochs[epoch_name]
                 return epoch_info
             else:
-                raise ValueError("This epoch has not been added")
+                raise RuntimeError("This epoch has not been added")
         else:
-            raise ValueError("epoch_name must be a string")
+            raise TypeError("epoch_name must be a string")
 
     def get_epoch(self, epoch_name):
         '''This function returns a SubRecordingExtractor which is a view to the
@@ -508,13 +568,95 @@ class RecordingExtractor(ABC):
         epoch_info = self.get_epoch_info(epoch_name)
         start_frame = epoch_info['start_frame']
         end_frame = epoch_info['end_frame']
-        from .SubRecordingExtractor import SubRecordingExtractor
+        from .subrecordingextractor import SubRecordingExtractor
         return SubRecordingExtractor(parent_recording=self, start_frame=start_frame,
                                      end_frame=end_frame)
 
-    @classmethod
-    def gui_params(self):
-        return copy.deepcopy(self._gui_params)
+    def load_probe_file(self, probe_file, channel_map=None, channel_groups=None, verbose=False):
+        '''This function returns a SubRecordingExtractor that contains information from the given
+        probe file (channel locations, groups, etc.) If a .prb file is given, then 'location' and 'group' 
+        information for each channel is added to the SubRecordingExtractor. If a .csv file is given, then 
+        it will only add 'location' to the SubRecordingExtractor.
+
+        Parameters
+        ----------
+        recording: RecordingExtractor
+            The recording extractor to channel information
+        probe_file: str
+            Path to probe file. Either .prb or .csv
+        verbose: bool
+            If True, output is verbose
+
+        Returns
+        ---------
+        subrecording = SubRecordingExtractor
+            The extractor containing all of the probe information.
+        '''
+        subrecording = load_probe_file(self, probe_file, channel_map=channel_map, 
+                                       channel_groups=channel_groups, verbose=verbose)
+        return subrecording
+
+    def save_to_probe_file(self, probe_file, format=None, radius=100, dimensions=None, verbose=False):
+        '''Saves probe file from the channel information of this recording extractor.
+
+        Parameters
+        ----------
+        probe_file: str
+            file name of .prb or .csv file to save probe information to
+        format: str (optional)
+            Format for .prb file. It can be either 'klusta' or 'spyking_circus'. Default is None.
+        verbose: bool
+            If True, output is verbose
+        '''
+        save_to_probe_file(self, probe_file, format=format, radius=radius, dimensions=dimensions,
+                           verbose=verbose)
+
+    def write_to_binary_dat_format(self, save_path, time_axis=0, dtype=None, chunksize=None):
+        '''Saves the traces of this recording extractor into binary .dat format.
+
+        Parameters
+        ----------
+        save_path: str
+            The path to the file.
+        time_axis: 0 (default) or 1
+            If 0 then traces are transposed to ensure (nb_sample, nb_channel) in the file.
+            If 1, the traces shape (nb_channel, nb_sample) is kept in the file.
+        dtype: dtype
+            Type of the saved data. Default float32
+        chunksize: None or int
+            If not None then the copy done by chunk size.
+            This avoid to much memory consumption for big files.
+        '''
+        write_to_binary_dat_format(self, save_path=save_path, time_axis=time_axis, dtype=dtype, chunksize=chunksize)
+   
+    def get_sub_extractors_by_property(self, property_name, return_property_list=False):
+        '''Returns a list of SubRecordingExtractors from this RecordingExtractor based on the given
+        property_name (e.g. group)
+
+        Parameters
+        ----------
+        property_name: str
+            The property used to subdivide the extractor
+        return_property_list: bool
+            If True the property list is returned
+
+        Returns
+        -------
+        sub_list: list
+            The list of subextractors to be returned.
+        OR
+        sub_list, prop_list
+            If return_property_list is True, the property list will be returned as well.
+
+        '''
+        if return_property_list:
+            sub_list, prop_list = get_sub_extractors_by_property(self, property_name=property_name, 
+                                                                return_property_list=return_property_list)
+            return sub_list, prop_list
+        else:
+            sub_list = get_sub_extractors_by_property(self, property_name=property_name, 
+                                                      return_property_list=return_property_list)
+            return sub_list
 
     @staticmethod
     def write_recording(recording, save_path):

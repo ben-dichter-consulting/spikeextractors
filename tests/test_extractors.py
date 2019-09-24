@@ -29,34 +29,40 @@ class TestExtractors(unittest.TestCase):
         channel_ids = [0, 1, 2, 3]
         num_channels = 4
         num_frames = 10000
-        samplerate = 30000
+        sampling_frequency = 30000
         X = np.random.normal(0, 1, (num_channels, num_frames))
         geom = np.random.normal(0, 1, (num_channels, 2))
         X = (X * 100).astype(int)
-        RX = se.NumpyRecordingExtractor(timeseries=X, samplerate=samplerate, geom=geom)
-        RX2 = se.NumpyRecordingExtractor(timeseries=X, samplerate=samplerate, geom=geom)
-        RX3 = se.NumpyRecordingExtractor(timeseries=X, samplerate=samplerate, geom=geom)
+        RX = se.NumpyRecordingExtractor(timeseries=X, sampling_frequency=sampling_frequency, geom=geom)
+        RX2 = se.NumpyRecordingExtractor(timeseries=X, sampling_frequency=sampling_frequency, geom=geom)
+        RX3 = se.NumpyRecordingExtractor(timeseries=X, sampling_frequency=sampling_frequency, geom=geom)
         SX = se.NumpySortingExtractor()
         spike_times = [200, 300, 400]
         train1 = np.sort(np.rint(np.random.uniform(0, num_frames, spike_times[0])).astype(int))
         SX.add_unit(unit_id=1, times=train1)
         SX.add_unit(unit_id=2, times=np.sort(np.random.uniform(0, num_frames, spike_times[1])))
         SX.add_unit(unit_id=3, times=np.sort(np.random.uniform(0, num_frames, spike_times[2])))
-        SX.set_unit_property(unit_id=1, property_name='stablility', value=80)
-        SX.set_sampling_frequency(samplerate)
+        SX.set_unit_property(unit_id=1, property_name='stability', value=80)
+        SX.set_sampling_frequency(sampling_frequency)
         SX2 = se.NumpySortingExtractor()
         spike_times2 = [100, 150, 450]
-        train2 = np.rint(np.random.uniform(0, num_frames, spike_times[0])).astype(int)
+        train2 = np.rint(np.random.uniform(0, num_frames, spike_times2[0])).astype(int)
         SX2.add_unit(unit_id=3, times=train2)
         SX2.add_unit(unit_id=4, times=np.random.uniform(0, num_frames, spike_times2[1]))
         SX2.add_unit(unit_id=5, times=np.random.uniform(0, num_frames, spike_times2[2]))
-        SX2.set_unit_property(unit_id=4, property_name='stablility', value=80)
+        SX2.set_unit_property(unit_id=4, property_name='stability', value=80)
+        SX2.set_unit_spike_features(unit_id=3, feature_name='widths', value=np.asarray([3]*spike_times2[0]))
         RX.set_channel_property(channel_id=0, property_name='location', value=(0, 0))
+        for i, unit_id in enumerate(SX2.get_unit_ids()):
+            SX2.set_unit_property(unit_id=unit_id, property_name='shared_unit_prop', value=i)
+            SX2.set_unit_spike_features(unit_id=unit_id, feature_name='shared_unit_feature', value=np.asarray([i]*spike_times2[i]))
+        for i, channel_id in enumerate(RX.get_channel_ids()):
+            RX.set_channel_property(channel_id=channel_id, property_name='shared_channel_prop', value=i)
         example_info = dict(
             channel_ids=channel_ids,
             num_channels=num_channels,
             num_frames=num_frames,
-            samplerate=samplerate,
+            sampling_frequency=sampling_frequency,
             unit_ids=[1, 2, 3],
             train1=train1,
             unit_prop=80,
@@ -69,13 +75,19 @@ class TestExtractors(unittest.TestCase):
         self.assertEqual(self.RX.get_channel_ids(), self.example_info['channel_ids'])
         self.assertEqual(self.RX.get_num_channels(), self.example_info['num_channels'])
         self.assertEqual(self.RX.get_num_frames(), self.example_info['num_frames'])
-        self.assertEqual(self.RX.get_sampling_frequency(), self.example_info['samplerate'])
+        self.assertEqual(self.RX.get_sampling_frequency(), self.example_info['sampling_frequency'])
         self.assertEqual(self.SX.get_unit_ids(), self.example_info['unit_ids'])
         self.assertEqual(self.RX.get_channel_property(channel_id=0, property_name='location'),
                          self.example_info['channel_prop'])
-        self.assertEqual(self.SX.get_unit_property(unit_id=1, property_name='stablility'), self.example_info['unit_prop'])
+        self.assertEqual(self.SX.get_unit_property(unit_id=1, property_name='stability'), self.example_info['unit_prop'])
         self.assertTrue(np.array_equal(self.SX.get_unit_spike_train(1), self.example_info['train1']))
         self.assertTrue(issubclass(self.SX.get_unit_spike_train(1).dtype.type, np.integer))
+        self.assertTrue(self.RX.get_shared_channel_property_names(), ['shared_channel_prop'])
+        self.assertTrue(self.RX.get_channel_property_names(0), ['location', 'shared_channel_prop'])
+        self.assertTrue(self.SX2.get_shared_unit_property_names(), ['shared_unit_prop'])
+        self.assertTrue(self.SX2.get_unit_property_names(4), ['shared_unit_prop', 'stability'])
+        self.assertTrue(self.SX2.get_shared_unit_spike_feature_names(), ['shared_unit_feature'])
+        self.assertTrue(self.SX2.get_unit_spike_feature_names(3), ['shared_channel_prop', 'widths'])
         self._check_recording_return_types(self.RX)
 
     def test_mda_extractor(self):

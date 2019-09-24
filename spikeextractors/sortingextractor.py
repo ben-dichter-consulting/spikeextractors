@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 import numpy as np
 import copy
+from .extraction_tools import get_sub_extractors_by_property
+
 
 
 class SortingExtractor(ABC):
@@ -11,10 +13,6 @@ class SortingExtractor(ABC):
 
 
     '''
-    extractor_name = ''
-    installed = False  # check at class level if installed or not
-    _gui_params = []
-    installation_mesg = ""  # error message when not installed
 
     def __init__(self):
         self._epochs = {}
@@ -195,27 +193,17 @@ class SortingExtractor(ABC):
         for unit_id in unit_ids:
             self.clear_unit_spike_features(unit_id, feature_name)
 
-    def get_unit_spike_feature_names(self, unit_id=None):
-        '''This function returns the names of spike features for a single
-        unit or across all units (depending on the given unit_id).
-
+    def get_unit_spike_feature_names(self, unit_id):
+        '''This function returns the list of feature names for the given unit
+        Parameters
+        ----------
+        unit_id: int
+            The unit id for which the feature names will be returned.
         Returns
         ----------
-        spike_features: list
-            A list of string names for each feature in the specified unit.
-
-        unit_id: int
-            The unit_id for which the feature names will be returned. If None,
-            the function will return all feature names across all units).
+        property_names
+            The list of feature names.
         '''
-        if unit_id is None:
-            feature_names = []
-            for unit_id in self.get_unit_ids():
-                curr_feature_names = self.get_unit_spike_feature_names(unit_id)
-                for curr_feature_name in curr_feature_names:
-                    feature_names.append(curr_feature_name)
-            feature_names = sorted(list(set(feature_names)))
-            return feature_names
         if isinstance(unit_id, (int, np.integer)):
             if unit_id in self.get_unit_ids():
                 if unit_id not in self._unit_features:
@@ -226,6 +214,27 @@ class SortingExtractor(ABC):
                 raise ValueError(str(unit_id) + " is not a valid unit_id")
         else:
             raise ValueError(str(unit_id) + " must be an int")
+        
+    def get_shared_unit_spike_feature_names(self, unit_ids=None):
+        '''Get the intersection of unit feature names for a given set of units or for all units if unit_ids is None.
+         Parameters
+        ----------
+        unit_ids: array_like
+            The unit ids for which the shared feature names will be returned.
+            If None (default), will return shared feature names for all units,
+        Returns
+        ----------
+        property_names
+            The list of shared feature names
+        '''
+        if unit_ids is None:
+            unit_ids = self.get_unit_ids()
+        curr_feature_name_set = set(self.get_unit_spike_feature_names(unit_id=unit_ids[0]))
+        for unit_id in unit_ids[1:]:
+            curr_unit_feature_name_set = set(self.get_unit_spike_feature_names(unit_id=unit_id))
+            curr_feature_name_set = curr_feature_name_set.intersection(curr_unit_feature_name_set)
+        feature_names = sorted(list(curr_feature_name_set))
+        return feature_names
 
     def set_unit_property(self, unit_id, property_name, value):
         '''This function adds a unit property data set under the given property
@@ -351,27 +360,17 @@ class SortingExtractor(ABC):
         values = [self.get_unit_property(unit_id=unit, property_name=property_name) for unit in unit_ids]
         return values
 
-    def get_unit_property_names(self, unit_id=None):
-        '''Get a list of property names for a given unit, or for all units if unit_id is None
-
-        Parameters
+    def get_unit_property_names(self, unit_id):
+        '''Get a list of property names for a given unit.
+         Parameters
         ----------
         unit_id: int
-            The unit id for which the property names will be returned
-            If None (default), will return property names for all units
+            The unit id for which the property names will be returned.
         Returns
         ----------
         property_names
-            The list of property names from the specified unit(s)
+            The list of property names
         '''
-        if unit_id is None:
-            property_names = []
-            for unit_id in self.get_unit_ids():
-                curr_property_names = self.get_unit_property_names(unit_id)
-                for curr_property_name in curr_property_names:
-                    property_names.append(curr_property_name)
-            property_names = sorted(list(set(property_names)))
-            return property_names
         if isinstance(unit_id, (int, np.integer)):
             if unit_id in self.get_unit_ids():
                 if unit_id not in self._unit_properties:
@@ -379,9 +378,30 @@ class SortingExtractor(ABC):
                 property_names = sorted(self._unit_properties[unit_id].keys())
                 return property_names
             else:
-                raise ValueError(str(unit_id) + " is not a valid unit_id")
+                raise ValueError(str(unit_id) + " is not a valid unit id")
         else:
-            raise ValueError(str(unit_id) + " must be an int")
+            raise TypeError(str(unit_id) + " must be an int")
+        
+    def get_shared_unit_property_names(self, unit_ids=None):
+        '''Get the intersection of unit property names for a given set of units or for all units if unit_ids is None.
+         Parameters
+        ----------
+        unit_ids: array_like
+            The unit ids for which the shared property names will be returned.
+            If None (default), will return shared property names for all units,
+        Returns
+        ----------
+        property_names
+            The list of shared property names
+        '''
+        if unit_ids is None:
+            unit_ids = self.get_unit_ids()
+        curr_property_name_set = set(self.get_unit_property_names(unit_id=unit_ids[0]))
+        for unit_id in unit_ids[1:]:
+            curr_unit_property_name_set = set(self.get_unit_property_names(unit_id=unit_id))
+            curr_property_name_set = curr_property_name_set.intersection(curr_unit_property_name_set)
+        property_names = sorted(list(curr_property_name_set))
+        return property_names
 
     def copy_unit_properties(self, sorting, unit_ids=None):
         '''Copy unit properties from another sorting extractor to the current
@@ -564,13 +584,35 @@ class SortingExtractor(ABC):
         epoch_info = self.get_epoch_info(epoch_name)
         start_frame = epoch_info['start_frame']
         end_frame = epoch_info['end_frame']
-        from .SubSortingExtractor import SubSortingExtractor
+        from .subsortingextractor import SubSortingExtractor
         return SubSortingExtractor(parent_sorting=self, start_frame=start_frame,
                                    end_frame=end_frame)
 
-    @classmethod
-    def gui_params(self):
-        return copy.deepcopy(self._gui_params)
+    def get_sub_extractors_by_property(self, property_name, return_property_list=False):
+        '''Returns a list of SubSortingExtractors from this SortingExtractor based on the given
+        property_name (e.g. group)
+
+        Parameters
+        ----------
+        property_name: str
+            The property used to subdivide the extractor
+        return_property_list: bool
+            If True the property list is returned
+
+        Returns
+        -------
+        sub_list: list
+            The list of subextractors to be returned.
+
+        '''
+        if return_property_list:
+            sub_list, prop_list = get_sub_extractors_by_property(self, property_name=property_name, 
+                                                                return_property_list=return_property_list)
+            return sub_list, prop_list
+        else:
+            sub_list = get_sub_extractors_by_property(self, property_name=property_name, 
+                                                      return_property_list=return_property_list)
+            return sub_list
 
     @staticmethod
     def write_sorting(sorting, save_path):

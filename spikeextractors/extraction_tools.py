@@ -1,8 +1,4 @@
 import numpy as np
-from .RecordingExtractor import RecordingExtractor
-from .SortingExtractor import SortingExtractor
-from .SubRecordingExtractor import SubRecordingExtractor
-from .SubSortingExtractor import SubSortingExtractor
 import csv
 import os
 import sys
@@ -57,10 +53,11 @@ def write_python(path, dict):
                 f.write(str(k) + " = " + str(v) + "\n")
 
 
-def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None):
-    '''Loads channel information into recording extractor. If a .prb file is given,
-    then 'location' and 'group' information for each channel is stored. If a .csv
-    file is given, then it will only store 'location'
+def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None, verbose=False):
+    '''This function returns a SubRecordingExtractor that contains information from the given
+    probe file (channel locations, groups, etc.) If a .prb file is given, then 'location' and 'group' 
+    information for each channel is added to the SubRecordingExtractor. If a .csv file is given, then 
+    it will only add 'location' to the SubRecordingExtractor.
 
     Parameters
     ----------
@@ -68,10 +65,16 @@ def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None
         The recording extractor to channel information
     probe_file: str
         Path to probe file. Either .prb or .csv
+    verbose: bool
+        If True, output is verbose
+
     Returns
     ---------
-    subRecordingExtractor
+    subrecording = SubRecordingExtractor
+        The extractor containing all of the probe information.
     '''
+    from .subrecordingextractor import SubRecordingExtractor
+    from .subsortingextractor import SubSortingExtractor
     probe_file = Path(probe_file)
     if probe_file.suffix == '.prb':
         probe_dict = read_python(probe_file)
@@ -87,7 +90,7 @@ def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None
             if list(ordered_channels) == recording.get_channel_ids():
                 subrecording = recording
             else:
-                if not np.all([chan in recording.get_channel_ids() for chan in ordered_channels]):
+                if not np.all([chan in recording.get_channel_ids() for chan in ordered_channels]) and verbose:
                     print('Some channel in PRB file are not in original recording')
                 present_ordered_channels = [chan for chan in ordered_channels if chan in recording.get_channel_ids()]
                 subrecording = SubRecordingExtractor(recording, channel_ids=present_ordered_channels)
@@ -98,8 +101,10 @@ def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None
                                     "for each channel group is required")
                 elif 'channels' not in cgroup.keys():
                     channels_in_group = subrecording.get_num_channels()
+                    channels_id_in_group = subrecording.get_channel_ids()
                 else:
                     channels_in_group = len(cgroup['channels'])
+                    channels_id_in_group = cgroup['channels']
                 for key_prop, prop_val in cgroup.items():
                     if key_prop == 'channels':
                         for i_ch, prop in enumerate(prop_val):
@@ -107,7 +112,7 @@ def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None
                                 subrecording.set_channel_property(prop, 'group', int(cgroup_id))
                     elif key_prop == 'geometry' or key_prop == 'location':
                         if isinstance(prop_val, dict):
-                            if len(prop_val.keys()) != channels_in_group:
+                            if len(prop_val.keys()) != channels_in_group and verbose:
                                 print('geometry in PRB does not have the same length as channel in group')
                             for (i_ch, prop) in prop_val.items():
                                 if i_ch in subrecording.get_channel_ids():
@@ -116,8 +121,7 @@ def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None
                             if 'channels' not in cgroup.keys():
                                 raise Exception("'geometry'/'location' in the .prb file can be a list only if "
                                                 "'channels' field is specified.")
-                            channels_id_in_group = cgroup['channels']
-                            if len(prop_val) != channels_in_group:
+                            if len(prop_val) != channels_in_group and verbose:
                                 print('geometry in PRB does not have the same length as channel in group')
                             for (i_ch, prop) in zip(channels_id_in_group, prop_val):
                                 if i_ch in subrecording.get_channel_ids():
@@ -128,7 +132,7 @@ def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None
                                 if i_ch in subrecording.get_channel_ids():
                                     subrecording.set_channel_property(i_ch, key_prop, prop)
                         elif isinstance(prop_val, (list, np.ndarray)) and len(prop_val) == channels_in_group:
-                            for (i_ch, prop) in zip(subrecording.get_channel_ids(), prop_val):
+                            for (i_ch, prop) in zip(channels_id_in_group, prop_val):
                                 if i_ch in subrecording.get_channel_ids():
                                     subrecording.set_channel_property(i_ch, key_prop, prop)
                 # create dummy locations
@@ -167,9 +171,9 @@ def load_probe_file(recording, probe_file, channel_map=None, channel_groups=None
     return subrecording
 
 
-def save_probe_file(recording, probe_file, format=None, radius=100, dimensions=None):
+def save_to_probe_file(recording, probe_file, format=None, radius=100, dimensions=None, verbose=False):
     '''Saves probe file from the channel information of the given recording
-    extractor
+    extractor.
 
     Parameters
     ----------
@@ -179,6 +183,8 @@ def save_probe_file(recording, probe_file, format=None, radius=100, dimensions=N
         file name of .prb or .csv file to save probe information to
     format: str (optional)
         Format for .prb file. It can be either 'klusta' or 'spyking_circus'. Default is None.
+    verbose: bool
+        If True, output is verbose
     '''
     probe_file = Path(probe_file)
     if not probe_file.parent.is_dir():
@@ -187,7 +193,7 @@ def save_probe_file(recording, probe_file, format=None, radius=100, dimensions=N
     if probe_file.suffix == '.csv':
         # write csv probe file
         with probe_file.open('w') as f:
-            if 'location' in recording.get_channel_property_names():
+            if 'location' in recording.get_shared_channel_property_names():
                 for chan in recording.get_channel_ids():
                     loc = recording.get_channel_property(chan, 'location')
                     if len(loc) == 2:
@@ -206,12 +212,12 @@ def save_probe_file(recording, probe_file, format=None, radius=100, dimensions=N
                 raise AttributeError("Recording extractor needs to have "
                                      "'location' property to save .csv probe file")
     elif probe_file.suffix == '.prb':
-        _export_prb_file(recording, probe_file, format, radius=radius, dimensions=dimensions)
+        _export_prb_file(recording, probe_file, format, radius=radius, dimensions=dimensions, verbose=verbose)
     else:
         raise NotImplementedError("Only .csv and .prb probe files can be saved.")
 
 
-def read_binary(file, numchan, dtype, frames_first=True, offset=0):
+def read_binary(file, numchan, dtype, time_axis=0, offset=0):
     '''
     Reads binary .bin or .dat file.
 
@@ -223,19 +229,17 @@ def read_binary(file, numchan, dtype, frames_first=True, offset=0):
         Number of channels
     dtype: dtype
         dtype of the file
-    frames_first: bool
-        If True frames are readed as the first dimension
+    time_axis: 0 (default) or 1
+        If 0 then traces are transposed to ensure (nb_sample, nb_channel) in the file.
+        If 1, the traces shape (nb_channel, nb_sample) is kept in the file.
     offset: int
         number of offset bytes
-
-    Returns
-    -------
 
     '''
     numchan = int(numchan)
     with Path(file).open() as f:
         nsamples = (os.fstat(f.fileno()).st_size - offset) // (numchan * np.dtype(dtype).itemsize)
-        if frames_first:
+        if time_axis == 0:
             samples = np.memmap(f, np.dtype(dtype), mode='r', offset=offset,
                                 shape=(nsamples, numchan))
             samples = np.transpose(samples)
@@ -245,7 +249,7 @@ def read_binary(file, numchan, dtype, frames_first=True, offset=0):
     return samples
 
 
-def write_binary_dat_format(recording, save_path, time_axis=0, dtype=None, chunksize=None):
+def write_to_binary_dat_format(recording, save_path, time_axis=0, dtype=None, chunksize=None):
     '''Saves the traces of a recording extractor in binary .dat format.
 
     Parameters
@@ -258,12 +262,10 @@ def write_binary_dat_format(recording, save_path, time_axis=0, dtype=None, chunk
         If 0 then traces are transposed to ensure (nb_sample, nb_channel) in the file.
         If 1, the traces shape (nb_channel, nb_sample) is kept in the file.
     dtype: dtype
-        Type of the saved data. Default float32
+        Type of the saved data. Default float32.
     chunksize: None or int
         If not None then the copy done by chunk size.
-        Thi avoid to much memory consumption for big files.
-    Returns
-    -------
+        This avoid to much memory consumption for big files.
     '''
     save_path = Path(save_path)
     if save_path.suffix == '':
@@ -298,12 +300,11 @@ def write_binary_dat_format(recording, save_path, time_axis=0, dtype=None, chunk
 
 
 def get_sub_extractors_by_property(extractor, property_name, return_property_list=False):
-    '''Divides Recording or Sorting Extractor based on the property_name (e.g. group)
+    '''Returns a list of SubRecordingExtractors from this RecordingExtractor based on the given
+    property_name (e.g. group)
 
     Parameters
     ----------
-    extractor: RecordingExtractor or SortingExtractor
-        The extractor to be subdivided in subextractors
     property_name: str
         The property used to subdivide the extractor
     return_property_list: bool
@@ -311,11 +312,18 @@ def get_sub_extractors_by_property(extractor, property_name, return_property_lis
 
     Returns
     -------
-    List of subextractors
-
+    sub_list: list
+        The list of subextractors to be returned.
+    OR
+    sub_list, prop_list
+        If return_property_list is True, the property list will be returned as well.
     '''
+    from .recordingextractor import RecordingExtractor
+    from .sortingextractor import SortingExtractor
+    from .subrecordingextractor import SubRecordingExtractor
+    from .subsortingextractor import SubSortingExtractor
     if isinstance(extractor, RecordingExtractor):
-        if property_name not in extractor.get_channel_property_names():
+        if property_name not in extractor.get_shared_channel_property_names():
             raise ValueError("'property_name' must be must be a property of the recording channels")
         else:
             sub_list = []
@@ -332,7 +340,7 @@ def get_sub_extractors_by_property(extractor, property_name, return_property_lis
             else:
                 return sub_list
     elif isinstance(extractor, SortingExtractor):
-        if property_name not in extractor.get_unit_property_names():
+        if property_name not in extractor.get_shared_unit_property_names():
             raise ValueError("'property_name' must be must be a property of the units")
         else:
             sub_list = []
@@ -353,7 +361,7 @@ def get_sub_extractors_by_property(extractor, property_name, return_property_lis
 
 
 def _export_prb_file(recording, file_name, format=None, adjacency_distance=None, graph=False, geometry=True, radius=100,
-                     dimensions='all'):
+                     dimensions='all', verbose=False):
     '''Exports .prb file
 
     Parameters
@@ -388,23 +396,25 @@ def _export_prb_file(recording, file_name, format=None, adjacency_distance=None,
     abspath = file_name.absolute()
 
     if geometry:
-        if 'location' in recording.get_channel_property_names():
+        if 'location' in recording.get_shared_channel_property_names():
             positions = np.array([recording.get_channel_property(chan, 'location')
                                   for chan in recording.get_channel_ids()])
             if dimensions is not None:
                 positions = positions[:, dimensions]
         else:
-            print("'location' property is not available and it will not be saved.")
+            if verbose:
+                print("'location' property is not available and it will not be saved.")
             positions = None
             geometry = False
     else:
         positions = None
 
-    if 'group' in recording.get_channel_property_names():
+    if 'group' in recording.get_shared_channel_property_names():
         groups = np.array([recording.get_channel_property(chan, 'group') for chan in recording.get_channel_ids()])
         channel_groups = np.unique([groups])
     else:
-        print("'group' property is not available and it will not be saved.")
+        if verbose:
+            print("'group' property is not available and it will not be saved.")
         channel_groups = [0]
         groups = np.array([0] * recording.get_num_channels())
 
