@@ -16,8 +16,7 @@ try:
     import pandas as pd
     from pynwb import NWBHDF5IO
     from pynwb import NWBFile
-    from pynwb.ecephys import ElectricalSeries, LFP
-    from pynwb.ecephys import ElectrodeGroup
+    from pynwb.ecephys import ElectricalSeries, LFP, ElectrodeGroup, SpikeEventSeries
     from hdmf.data_utils import DataChunkIterator
     from hdmf.backends.hdf5.h5_utils import H5DataIO
 
@@ -1066,7 +1065,8 @@ class NwbSortingExtractor(se.SortingExtractor):
 
     @staticmethod
     def write_units(sorting: se.SortingExtractor, nwbfile,
-                    property_descriptions: dict = None, timestamps: ArrayType = None):
+                    property_descriptions: dict = None, timestamps: ArrayType = None, write_waveforms: bool = False,
+                    waveforms_as_event_series: bool = True, waveform_gain: float = 1.0):
         """Auxilliary function for write_sorting."""
         unit_ids = sorting.get_unit_ids()
         fs = sorting.get_sampling_frequency()
@@ -1161,23 +1161,27 @@ class NwbSortingExtractor(se.SortingExtractor):
                             unit_kwargs.update({pr: np.nan})
                 nwbfile.add_unit(id=unit_id, spike_times=spkt, **unit_kwargs)
 
-            # TODO
-            # # Stores average and std of spike traces
-            # This will soon be updated to the current NWB standard
-            # if 'waveforms' in sorting.get_unit_spike_feature_names(unit_id=id):
-            #     wf = sorting.get_unit_spike_features(unit_id=id,
-            #                                          feature_name='waveforms')
-            #     relevant_ch = most_relevant_ch(wf)
-            #     # Spike traces on the most relevant channel
-            #     traces = wf[:, relevant_ch, :]
-            #     traces_avg = np.mean(traces, axis=0)
-            #     traces_std = np.std(traces, axis=0)
-            #     nwbfile.add_unit(
-            #         id=id,
-            #         spike_times=spkt,
-            #         waveform_mean=traces_avg,
-            #         waveform_sd=traces_std
-            #     )
+            if write_waveforms and 'waveforms' in sorting.get_unit_spike_feature_names(unit_id=unit_id):
+                # TODO: likely replace this with data generator/memmap chunking as in electrical serries
+                wf = sorting.get_unit_spike_features(unit_id=unit_id, feature_name='waveforms')
+
+                # TODO: if multisorting extractor, can use groups as partitioned in the unit map to define groups
+                # will have to auto-fetch electrode group names since it may not always be the same
+                group = 1
+                group = nwbfile.electrode_groups[f'shank{group}']
+                elec_idx = list(np.where(np.array(nwbfile.ec_electrodes['group']) == group)[0])
+                table_region = nwbfile.create_electrode_table_region(elec_idx, group.name + ' region')
+
+                spike_event_series = SpikeEventSeries(
+                    name='SpikeWaveforms',
+                    data=H5DataIO(wf, compression="gzip"),
+                    timestamps=sorting.get_unit_spike_train(unit_id),
+                    conversion=waveform_gain * 1e-6,
+                    electrodes=table_region
+                )
+                check_module(nwbfile, 'ecephys').add_data_interface(spike_event_series)
+            else:
+                raise NotImplementedError("Writing waveforms as columns of the units table is not yet supported!")
 
             # Check that multidimensional features have the same shape across units
             feature_shapes = dict()
