@@ -105,14 +105,14 @@ def most_relevant_ch(traces):
     Calculates the most relevant channel for an Unit.
     Estimates the channel where the max-min difference of the average traces is greatest.
     traces : ndarray
-        ndarray of shape (nSpikes, nChannels, nSamples)
+        ndarray of shape (nSpikes, nSamples, nChannels)
     """
-    n_channels = traces.shape[1]
+    n_channels = traces.shape[2]
     avg = np.mean(traces, axis=0)
 
     max_min = np.zeros(n_channels)
     for ch in range(n_channels):
-        max_min[ch] = avg[ch, :].max() - avg[ch, :].min()
+        max_min[ch] = avg[:, ch].max() - avg[:, ch].min()
 
     relevant_ch = np.argmax(max_min)
     return relevant_ch
@@ -1081,7 +1081,7 @@ class NwbSortingExtractor(se.SortingExtractor):
     ):
         """Auxilliary function for write_sorting."""
         if skip_properties is None:
-            skip_properties = set()
+            skip_properties = set(['gain'])
         if skip_features is None:
             skip_features = set(['waveforms'])
 
@@ -1109,12 +1109,6 @@ class NwbSortingExtractor(se.SortingExtractor):
             property_descriptions = dict(default_descriptions)
         else:
             property_descriptions = dict(default_descriptions, **property_descriptions)
-        for pr in all_properties:
-            if pr not in property_descriptions:
-                warnings.warn(
-                    f"Description for property {pr} not found in property_descriptions. "
-                    "Setting description to 'no description'"
-                )
 
         if nwbfile.units is None:
             # Check that array properties have the same shape across units
@@ -1146,6 +1140,11 @@ class NwbSortingExtractor(se.SortingExtractor):
 
             write_properties = all_properties - skip_properties
             for pr in write_properties:
+                if pr not in property_descriptions:
+                    warnings.warn(
+                        f"Description for property {pr} not found in property_descriptions. "
+                        "Setting description to 'no description'"
+                    )
                 unit_col_args = dict(name=pr, description=property_descriptions.get(pr, "No description."))
                 if pr in ['max_channel', 'max_electrode'] and nwbfile.electrodes is not None:
                     unit_col_args.update(table=nwbfile.electrodes)
@@ -1177,8 +1176,9 @@ class NwbSortingExtractor(se.SortingExtractor):
 
                 if write_waveform_stats:
                     check_waveform_features(sorting=sorting, unit_id=unit_id)
+                    wf = sorting.get_unit_spike_features(unit_id=unit_id, feature_name='waveforms')
                     relevant_ch = most_relevant_ch(wf)
-                    traces = wf[:, relevant_ch, :]
+                    traces = wf[:, :, relevant_ch]
                     traces_avg = np.mean(traces, axis=0)
                     traces_std = np.std(traces, axis=0)
                     unit_kwargs.update(waveform_mean=traces_avg, waveform_sd=traces_std)

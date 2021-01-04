@@ -6,7 +6,6 @@ from spikeextractors.extraction_tools import check_valid_unit_id, get_sub_extrac
 from typing import Union, Optional
 import re
 import warnings
-from typing import Optional
 
 try:
     from lxml import etree as et
@@ -80,14 +79,10 @@ class NeuroscopeRecordingExtractor(BinDatRecordingExtractor):
         BinDatRecordingExtractor.__init__(self, file_path, sampling_frequency=sampling_frequency,
                                           dtype=dtype, numchan=numchan_from_file)
 
-<<<<<<< HEAD
-        self._kwargs = dict(file_path=str(Path(file_path).absolute()))
-=======
         if gain is not None:
             self.set_channel_gains(channel_ids=self.get_channel_ids(), gains=gain)
 
         self._kwargs = dict(file_path=str(Path(file_path).absolute()), gain=gain)
->>>>>>> master
 
     @staticmethod
     def write_recording(
@@ -320,6 +315,8 @@ class NeuroscopeSortingExtractor(SortingExtractor):
         Optional. Whether or not to return sorted spikes from multi-unit activity. Defaults to True.
     spkfile_path : PathType
         Optional. Path to a particular .spk binary file containing waveform snippets added to the extractor as features.
+    gain : float
+        Optional. If passing a spkfile_path, this value converts the data type of the waveforms to units of microvolts.
     """
 
     extractor_name = "NeuroscopeSortingExtractor"
@@ -334,7 +331,8 @@ class NeuroscopeSortingExtractor(SortingExtractor):
         clufile_path: OptionalPathType = None,
         folder_path: OptionalPathType = None,
         keep_mua_units: bool = True,
-        spkfile_path: OptionalPathType = None
+        spkfile_path: OptionalPathType = None,
+        gain: Optional[float] = None
     ):
         assert HAVE_LXML, self.installation_mesg
         assert not (folder_path is None and resfile_path is None and clufile_path is None), \
@@ -428,6 +426,8 @@ class NeuroscopeSortingExtractor(SortingExtractor):
             wf = wf.reshape(n_spikes, n_samples, n_channels)
 
             for unit_id in self.get_unit_ids():
+                if gain is not None:
+                    self.set_unit_property(unit_id=unit_id, property_name='gain', value=gain)
                 self.set_unit_spike_features(
                     unit_id=unit_id,
                     feature_name='waveforms',
@@ -550,6 +550,8 @@ class NeuroscopeMultiSortingExtractor(MultiSortingExtractor):
     write_waveforms : bool
         Optional. If True, extracts waveform data from .spk.%i files in the path corresponding to
         the .res.%i and .clue.%i files and sets these as unit spike features. Defaults to False.
+    gain : float
+        Optional. If passing a spkfile_path, this value converts the data type of the waveforms to units of microvolts.
     """
 
     extractor_name = "NeuroscopeMultiSortingExtractor"
@@ -563,7 +565,8 @@ class NeuroscopeMultiSortingExtractor(MultiSortingExtractor):
         folder_path: PathType,
         keep_mua_units: bool = True,
         exclude_shanks: Optional[list] = None,
-        write_waveforms: bool = False
+        write_waveforms: bool = False,
+        gain: Optional[float] = None
     ):
         assert HAVE_LXML, self.installation_mesg
 
@@ -621,7 +624,7 @@ class NeuroscopeMultiSortingExtractor(MultiSortingExtractor):
                 assert np.all(s == r for (s, r) in zip(spkfile_names, resfile_names)), \
                     "Some of the .spk.%i and .res.%i files do not share the same name!"
 
-                nse_args.update(spkfile_path=folder_path / f"{sorting_name}.spk.{shank_id}")
+                nse_args.update(spkfile_path=folder_path / f"{sorting_name}.spk.{shank_id}", gain=gain)
 
             all_shanks_list_se.append(NeuroscopeSortingExtractor(**nse_args))
 
