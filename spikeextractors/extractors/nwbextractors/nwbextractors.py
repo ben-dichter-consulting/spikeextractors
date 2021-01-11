@@ -785,11 +785,11 @@ class NwbRecordingExtractor(se.RecordingExtractor):
                 if [epoch_name] in nwbfile.epochs['tags'][:]:
                     ind = nwbfile.epochs['tags'][:].index([epoch_name])
                     nwbfile.epochs['start_time'].data[ind] = recording.frame_to_time(epoch['start_frame'])
-                    nwbfile.epochs['stop_time'].data[ind] = recording.frame_to_time(epoch['end_frame'])
+                    nwbfile.epochs['stop_time'].data[ind] = recording.frame_to_time(epoch['end_frame'] - 1)
                 else:
                     nwbfile.add_epoch(
                         start_time=recording.frame_to_time(epoch['start_frame']),
-                        stop_time=recording.frame_to_time(epoch['end_frame']),
+                        stop_time=recording.frame_to_time(epoch['end_frame'] - 1),
                         tags=epoch_name
                     )
 
