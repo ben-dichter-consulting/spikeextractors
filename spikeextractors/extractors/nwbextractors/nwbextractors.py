@@ -1162,8 +1162,6 @@ class NwbSortingExtractor(se.SortingExtractor):
                 nwbfile.add_unit_column(**unit_col_args)
 
             if write_waveforms:
-                nwbfile.units.waveform_rate = sf  # Hz
-
                 # channel gains - for RecordingExtractor, these are values to cast traces to uV
                 # for nwb, the conversions (gains) cast the data to Volts
                 gain = np.unique(np.squeeze([
@@ -1196,15 +1194,14 @@ class NwbSortingExtractor(se.SortingExtractor):
 
                 if write_waveforms:
                     check_waveform_features(sorting=sorting, unit_id=unit_id)
-                    wf = sorting.get_unit_spike_features(unit_id=unit_id, feature_name='waveforms')
-                    # This is temporary until the NWB Schema allows conversion factors for waveforms in the units table
-                    wf = wf * gain * 1e-6
-                    # ---
+                    wf = sorting.get_unit_spike_features(unit_id=unit_id, feature_name='waveforms') * gain * 1e-6
+                    # The gain is temporary until the NWB Schema allows conversion factors for waveforms in the units
                     unit_kwargs.update(waveforms=wf)
 
                 if write_waveform_stats:
                     check_waveform_features(sorting=sorting, unit_id=unit_id)
-                    wf = sorting.get_unit_spike_features(unit_id=unit_id, feature_name='waveforms')
+                    wf = sorting.get_unit_spike_features(unit_id=unit_id, feature_name='waveforms') * gain * 1e-6
+                    # The gain is temporary until the NWB Schema allows conversion factors for waveforms in the units
                     relevant_ch = most_relevant_ch(wf)
                     traces = wf[:, :, relevant_ch]
                     traces_avg = np.mean(traces, axis=0)
@@ -1212,6 +1209,9 @@ class NwbSortingExtractor(se.SortingExtractor):
                     unit_kwargs.update(waveform_mean=traces_avg, waveform_sd=traces_std)
 
                 nwbfile.add_unit(**unit_kwargs)
+
+            if write_waveforms or write_waveform_stats:
+                nwbfile.units.waveform_rate = sf  # Hz
 
             # Check that multidimensional features have the same shape across units
             write_features = all_features - set(skip_features)
